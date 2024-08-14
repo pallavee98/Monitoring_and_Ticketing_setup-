@@ -44,7 +44,7 @@ sudo mkdir /var/lib/prometheus
 sudo chown prometheus:prometheus /var/lib/prometheus
 sudo chown -R prometheus:prometheus /etc/prometheus
 ```
-- Creating systemd service file
+## Creating systemd service file
 - Create a Prometheus Systemd Service File
 ```
 sudo nano /etc/systemd/system/prometheus.service
@@ -76,7 +76,7 @@ WantedBy=multi-user.target
 ```
 sudo systemctl daemon-reload
 ```
-- Start the Prometheus Service
+## Start the Prometheus Service
 ```
 sudo systemctl start prometheus
 ```
@@ -158,7 +158,7 @@ ExecStart=/usr/local/bin/node_exporter
 [Install]
 WantedBy=multi-user.target
 ```
-- Reload Systemd and Start Node Exporter
+## Start Node Exporter
 ```
 sudo systemctl daemon-reload
 sudo systemctl start node_exporter
@@ -202,9 +202,85 @@ journalctl -u node_exporter.service
 ```
   enter  localhost: 9100
 ```
+## ALertmanager installation and set up
+- Go to the website
+```
+https://prometheus.io/download/
+```
+- Download alertmanager for linux
+```
+alertmanager-0.27.0.linux-amd64.tar.gz
+tar xvfz alertmanager-0.27.0.linux-amd64.tar.gz
+```
+- Move the Alertmanager binary and files:
+```
+sudo mv alertmanager-0.26.0.linux-amd64/alertmanager /usr/local/bin/
+sudo mv alertmanager-0.26.0.linux-amd64/amtool /usr/local/bin/
+sudo mkdir /etc/alertmanager
+sudo mv alertmanager-0.26.0.linux-amd64/alertmanager.yml /etc/alertmanager/
+```
+## Create the service file:
+```
+sudo nano /etc/systemd/system/alertmanager.service
+```    
+```
+[Unit]
+Description=Prometheus Alertmanager Service
+Wants=network-online.target
+After=network-online.target
 
+[Service]
+User=alertmanager
+Group=alertmanager
+Type=simple
+ExecStart=/usr/local/bin/alertmanager \
+  --config.file=/etc/alertmanager/alertmanager.yml \
+  --storage.path=/var/lib/alertmanager/data
 
+[Install]
+WantedBy=multi-user.target
+```
+## Start service
+```
+sudo systemctl start alertmanager
+sudo systemctl enable alertmanager
+sudo systemctl status alertmanager
+```
+### Output 
+```
+pallavee@pallavee:~$ sudo nano /etc/systemd/system/alertmanager.service
+pallavee@pallavee:~$ sudo systemctl status alertmanager
+● alertmanager.service - Prometheus Alertmanager Service
+     Loaded: loaded (/etc/systemd/system/alertmanager.service; enabled; vendor preset: enabled)
+     Active: active (running) since Mon 2024-08-12 10:39:51 IST; 2h 54min ago
+   Main PID: 1730 (alertmanager)
+      Tasks: 9 (limit: 9318)
+     Memory: 36.3M
+        CPU: 11.076s
+     CGroup: /system.slice/alertmanager.service
+             └─1730 /usr/local/bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/var/lib/alertmanager/data
 
+Aug 12 10:39:51 pallavee alertmanager[1730]: ts=2024-08-12T05:09:51.513Z caller=main.go:181 level=info msg="Starting Alertmanager" version="(version=0.27.0, branch=HEAD, revision=0aa3c2aad1>
+Aug 12 10:39:51 pallavee alertmanager[1730]: ts=2024-08-12T05:09:51.516Z caller=main.go:182 level=info build_context="(go=go1.21.7, platform=linux/amd64, user=root@22cd11f671e9, date=202402>
+Aug 12 10:39:51 pallavee alertmanager[1730]: ts=2024-08-12T05:09:51.518Z caller=cluster.go:186 level=info component=cluster msg="setting advertise address explicitly" addr=10.42.0.23 port=9>
+Aug 12 10:39:51 pallavee alertmanager[1730]: ts=2024-08-12T05:09:51.527Z caller=cluster.go:683 level=info component=cluster msg="Waiting for gossip to settle..." interval=2s
+Aug 12 10:39:51 pallavee alertmanager[1730]: ts=2024-08-12T05:09:51.617Z caller=coordinator.go:113 level=info component=configuration msg="Loading configuration file" file=/etc/alertmanager>
+Aug 12 10:39:51 pallavee alertmanager[1730]: ts=2024-08-12T05:09:51.621Z caller=coordinator.go:126 level=info component=configuration msg="Completed loading of configuration file" file=/etc>
+Aug 12 10:39:51 pallavee alertmanager[1730]: ts=2024-08-12T05:09:51.626Z caller=tls_config.go:313 level=info msg="Listening on" address=[::]:9093
+Aug 12 10:39:51 pallavee alertmanager[1730]: ts=2024-08-12T05:09:51.626Z caller=tls_config.go:316 level=info msg="TLS is disabled." http2=false address=[::]:9093
+Aug 12 10:39:53 pallavee alertmanager[1730]: ts=2024-08-12T05:09:53.528Z caller=cluster.go:708 level=info component=cluster msg="gossip not settled" polls=0 before=0 now=1 elapsed=2.0007791>
+Aug 12 10:40:01 pallavee alertmanager[1730]: ts=2024-08-12T05:10:01.530Z caller=cluster.go:700 level=info component=cluster msg="gossip settled; proceeding" elapsed=10.002903882s
+lines 1-20/20 (END)
+```
+## Troubleshooting
+```
+journalctl -u alertmanager.service
+```
+
+- To access node exporter go to the web browser and enter
+```
+localhost: 9093
+```
 
 
 
