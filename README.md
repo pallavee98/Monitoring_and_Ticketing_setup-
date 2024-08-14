@@ -122,3 +122,118 @@ journalctl -u prometheus.service
 ```
 http://localhost:9090/graph?g0.expr=&g0.tab=1&g0.display_mode=lines&g0.show_exemplars=0&g0.range_input=1h
 ```
+## Node exporter set up 
+
+- GO to the website
+```
+https://prometheus.io/download/
+```
+- install node exporter
+```
+node_exporter-1.8.2.linux-amd64.tar.gz
+tar xvfz node_exporter-1.8.2 linux-amd64.tar.gz
+```
+- Move the Node Exporter binary to /usr/local/bin:
+```
+sudo mv node_exporter-1.6.1.linux-amd64/node_exporter /usr/local/bin/
+```
+## Create a Node Exporter Systemd Service File
+- Create the service file:
+```
+sudo nano /etc/systemd/system/node_exporter.service
+```
+- Add content
+```
+[Unit]
+Description=Node Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=node_exporter
+Group=node_exporter
+Type=simple
+ExecStart=/usr/local/bin/node_exporter
+
+[Install]
+WantedBy=multi-user.target
+```
+- Reload Systemd and Start Node Exporter
+```
+sudo systemctl daemon-reload
+sudo systemctl start node_exporter
+```
+- Enable Node Exporter to start on boot:
+```
+sudo systemctl enable node_exporter
+```
+- Verify the service 
+```
+sudo systemctl status node_exporter
+```
+### Output 
+```
+● node_exporter.service - Node Exporter
+     Loaded: loaded (/etc/systemd/system/node_exporter.service; enabled; vendor preset: enabled)
+     Active: active (running) since Mon 2024-08-12 10:39:51 IST; 2h 49min ago
+   Main PID: 1743 (node_exporter)
+      Tasks: 7 (limit: 9318)
+     Memory: 21.6M
+        CPU: 27.119s
+     CGroup: /system.slice/node_exporter.service
+             └─1743 /usr/local/bin/node_exporter
+
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.426Z caller=node_exporter.go:118 level=info collector=time
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.426Z caller=node_exporter.go:118 level=info collector=timex
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.426Z caller=node_exporter.go:118 level=info collector=udp_queues
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.426Z caller=node_exporter.go:118 level=info collector=uname
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.426Z caller=node_exporter.go:118 level=info collector=vmstat
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.426Z caller=node_exporter.go:118 level=info collector=watchdog
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.426Z caller=node_exporter.go:118 level=info collector=xfs
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.426Z caller=node_exporter.go:118 level=info collector=zfs
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.433Z caller=tls_config.go:313 level=info msg="Listening on" address=[::]:9100
+Aug 12 10:39:51 pallavee node_exporter[1743]: ts=2024-08-12T05:09:51.433Z caller=tls_config.go:316 level=info msg="TLS is disabled." http2=false address=[::]:9100
+```
+## Troubleshooting 
+```
+journalctl -u node_exporter.service 
+```
+- To access node exporter go to the web browser
+```
+  enter  localhost: 9100
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
