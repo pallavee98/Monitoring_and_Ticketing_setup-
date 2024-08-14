@@ -539,10 +539,140 @@ receivers:
   - url: 'http://192.168.0.107:5100/api/v1/alerts'
     send_resolved: true
 ```
+## Set up for webhook
 
+## Install python and Flask
+```
+pip install Flask requests
+```
+## Check python Installed sucessfull
+```
+python --version
+```
+- create file for webhook
+```
+nano alert_webhook.py
+```
+## Add following content in file
+```
+from flask import Flask, request, jsonify
+import requests
 
+app = Flask(__name__)
 
+# Redmine API Configuration
+REDMINE_API_URL = 'http*************'  # Redmine server's IP and port
+REDMINE_API_KEY = '2e914e3'
 
+# File to store mapping of alert names to Redmine issue IDs
+ISSUE_MAP_FILE = 'issues_map.txt'
+
+def save_issue_id(alertname, issue_id):
+    """Save the issue ID associated with an alert name."""
+    with open(ISSUE_MAP_FILE, 'a') as f:
+        f.write(f"{alertname}:{issue_id}\n")
+
+def find_latest_issue_id(alertname):
+    """Find the most recent issue ID associated with an alert name."""
+    try:
+        with open(ISSUE_MAP_FILE, 'r') as f:
+            lines = f.readlines()
+            # Reverse the list to find the most recent issue ID
+            for line in reversed(lines):
+                name, id = line.strip().split(':')
+                if name == alertname:
+                    return id
+    except FileNotFoundError:
+        return None
+    return None
+
+def create_redmine_issue(alert):
+    headers = {
+        'X-Redmine-API-Key': REDMINE_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    
+    issue_data = {
+        "issue": {
+            "project_id": 4,  # Project ID for 'monitoring'
+            "subject": alert.get('annotations', {}).get('summary', 'No summary provided'),
+            "description": alert.get('annotations', {}).get('description', 'No description provided'),
+            "priority_id": 11,  # Priority ID based on your Redmine setup
+            "status_id": 1  # Set the issue status to "New" when created
+        }
+    }
+    
+    response = requests.post(REDMINE_API_URL, json=issue_data, headers=headers)
+    
+    # Log the Redmine API response
+    print(f"Redmine response status: {response.status_code}")
+    print(f"Redmine response content: {response.text}")
+    
+    if response.status_code == 201:
+        return response.json().get('issue', {}).get('id')
+    else:
+        return None
+
+def close_redmine_issue(issue_id):
+    url = f'http://localhost:3100/issues/{issue_id}.json'
+
+    headers = {
+        'X-Redmine-API-Key': REDMINE_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    issue_data = {
+        "issue": {
+            "status_id": 13  # Using ID 13 for 'Closed' status
+        }
+    }
+    response = requests.put(url, json=issue_data, headers=headers)
+    
+    # Log the Redmine API response
+    print(f"Redmine response status: {response.status_code}")
+    print(f"Redmine response content: {response.text}")
+    
+    return response.status_code == 200
+
+@app.route('/api/v1/alerts', methods=['GET', 'POST'])
+def receive_alert():
+    if request.method == 'POST':
+        alert_data = request.json
+        print("Received alert:", alert_data)
+        
+        for alert in alert_data.get('alerts', []):
+            alertname = alert['labels'].get('alertname')
+            if alert['status'] == 'firing':
+                # Create a new issue in Redmine
+                issue_id = create_redmine_issue(alert)
+                if issue_id:
+                    save_issue_id(alertname, issue_id)
+                    print(f"Created Redmine issue with ID {issue_id}")
+                else:
+                    print("Failed to create Redmine issue")
+            elif alert['status'] == 'resolved':
+                # Find the most recent corresponding issue ID
+                issue_id = find_latest_issue_id(alertname)
+                if issue_id:
+                    closed = close_redmine_issue(issue_id)
+                    if closed:
+                        print(f"Closed Redmine issue with ID {issue_id}")
+                    else:
+                        print(f"Done Redmine issue with ID {issue_id}")
+                else:
+                    print("Could not find corresponding issue ID for alert")
+        
+        return jsonify({'status': 'received'}), 200
+    else:
+        return "Webhook endpoint is running.", 200
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5100, debug=True)
+
+```
+## Command to run webhook
+```
+python3 alert_webhook.py
+```
 
 
 
