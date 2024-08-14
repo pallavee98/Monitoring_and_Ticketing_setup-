@@ -282,6 +282,231 @@ journalctl -u alertmanager.service
 localhost: 9093
 ```
 
+## Redmine set up in podman 
+- Install Podman
+```
+sudo apt update 
+sudo apt install podman
+```
+- Create a Pod for Redmine
+```
+podman pod create --name redmine -p 3100:3000
+```
+# Create a folder for PostgreSQL data
+```
+echo "Creating folder for PostgreSQL data..."
+mkdir -p /home/pallavee/data/redmine/postgres
+```
+# Change ownership of the folder
+```
+echo "Changing ownership of the folder..."
+podman unshare chown 999:999 /home/pallavee/data/redmine/postgres
+```
+# Create the Redmine Pod
+```
+echo "Creating the Redmine Pod..."
+podman pod create --name redmine --publish 3100:3000 --publish 5433:5432
+```
+# Run the PostgreSQL container
+```
+echo "Running the PostgreSQL container..."
+podman run -dt \
+    --pod redmine \
+    --name redmine-postgres \
+    -e POSTGRES_DB=keen \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_PASSWORD=password \
+    -e POSTGRES_HOST_AUTH_METHOD=trust \
+    -e PGDATA=/var/lib/postgresql/data/pgdata \
+    -v /home/nidhi/data/redmine/postgres:/var/lib/postgresql/data \
+  docker.io/postgres:latest
+```
+# Run the Redmine application container
+```
+echo "Running the Redmine application container..."
+podman run -dt \
+    --pod redmine \
+    --name redmine-app \
+    -e REDMINE_DB_POSTGRES=127.0.0.1 \
+    -e REDMINE_DB_PORT=5432 \
+    -e REDMINE_DB_DATABASE=keen \
+    -e REDMINE_DB_USERNAME=postgres \
+    -e REDMINE_DB_PASSWORD=password \
+    docker.io/redmine:latest
+```
+## Access Redmine
+- Once the containers are running, you can access Redmine by navigating to
+```
+http://localhost:8080 in your web browser.
+```
+
+## Start redemine pod usind 
+```
+Podman pod start redmine
+```
+## Start redmine using 
+```
+Podman start redmine-app
+```
+## Check status of Redmine
+```
+podman ps
+```
+## Output
+```
+CONTAINER ID  IMAGE                              COMMAND               CREATED     STATUS             PORTS                                           NAMES
+852698b6d58f  k8s.gcr.io/pause:3.5                                     5 days ago  Up 58 minutes ago  0.0.0.0:3100->3000/tcp, 0.0.0.0:5433->5432/tcp  a052f97c8609-infra
+55b159943b4f  docker.io/library/postgres:latest  postgres              5 days ago  Up 58 minutes ago  0.0.0.0:3100->3000/tcp, 0.0.0.0:5433->5432/tcp  redmine-postgres
+ddf1f6011867  docker.io/library/redmine:latest   rails server -b 0...  5 days ago  Up 58 minutes ago  0.0.0.0:3100->3000/tcp, 0.0.0.0:5433->5432/tcp  redmine-app
+```
+## Integrating node exporter and alertmanager with prometheus
+- Follow this steps for integrating prometheus node exporter and alertmanager
+- Go to
+```
+cd /etc/prometheus/prometheus.yml
+Using nano prometheus.yml
+```
+- Add folowing content in file
+```
+# my global config
+global:
+  scrape_interval: 15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+  evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
+  # scrape_timeout is set to the global default (10s).
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+           - localhost:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+rule_files:
+ #  - "rules1.yml" 
+   - "rules.yml"
+  # - "second_rules.yml"
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: "prometheus"
+
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+
+    static_configs:
+      - targets: ["localhost:9090"]
+# grafana 
+  - job_name: "grafana"
+
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+
+    static_configs:
+      - targets: ["localhost:3000"]
+
+#node-exporter
+  - job_name: "node_exporter"
+
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+
+    static_configs:
+      - targets: ["localhost:9100"]
+
+```
+- After adding press ctrl+x
+- Ctrl+y
+- Enter
+
+## Add rule file for triggering alert 
+```
+Cd /etc/prometheus
+Ls
+Nano rules.yml
+```
+## Add follow content 
+```
+groups:
+  - name: node_exporter_alerts
+    rules:
+      # Alert for when Node Exporter is down
+      - alert: NodeExporterDown
+        expr: up{job="node_exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          priority: priority1
+        annotations:
+          summary: "Node Exporter Down (instance {{ $labels.instance }})"
+          description: "Node Exporter has been down for more than 1 minute."
+          status: "In progress"
+          assignee: "pallavee"
+          start_date: "2024-07-22"
+          due_date: "2024-07-30"
+          done_ratio: "50"
+
+      # Alert for when CPU usage exceeds 80%
+      - alert: HighCPUUsage
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 1m
+        labels:
+          severity: warning
+          priority: priority2
+        annotations:
+          summary: "High CPU Usage (instance {{ $labels.instance }})"
+          description: "CPU usage has been above 80% for more than 1 minute."
+          status: "In progress"
+          assignee: "pallavee"
+          start_date: "2024-07-22"
+          due_date: "2024-07-30"
+          done_ratio: "50"
+
+      # Alert for when disk space consumption exceeds 80%
+      - alert: HighDiskUsage
+        expr: (node_filesystem_size_bytes{fstype!~"tmpfs|aufs|overlay"} - node_filesystem_free_bytes{fstype!~"tmpfs|aufs|overlay"}) / node_filesystem_size_bytes{fstype!~"tmpfs|aufs|overlay"} > 0.8
+        for: 1m
+        labels:
+          severity: warning
+          priority: priority3
+        annotations:
+          summary: "High Disk Usage (instance {{ $labels.instance }})"
+          description: "Disk usage has been above 80% for more than 1 minute."
+          status: "In progress"
+          assignee: "pallavee"
+          start_date: "2024-07-22"
+          due_date: "2024-07-30"
+          done_ratio: "50"
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
