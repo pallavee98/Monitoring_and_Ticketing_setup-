@@ -480,9 +480,65 @@ groups:
           due_date: "2024-07-30"
           done_ratio: "50"
 ```
+## Integrating webhook in alertmanager
+```
+Cd /etc/alertmanager
+Ls
+Nano alertmanager.yml
+```
+### Add following content
+```
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'alertmanager52@gmail.com'
+  smtp_auth_username: 'alertmanager52@gmail.com'
+  smtp_auth_password: 'kotlsd'
+  smtp_auth_identity: 'alertmanager52@gmail.com'
 
+route:
+  group_by: ['alertname']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+  receiver: 'email-receiver'
+  
+  routes:
+  - receiver: 'webhook-receiver'
+    matchers:
+    - alertname=~".*"
 
+receivers:
+- name: 'email-receiver'
+  email_configs:
+  - to: 'testpallaveetest@gmail.com'
+    send_resolved: true
+    headers:
+      Subject: '[{{ .CommonLabels.alertname }}]'
+    html: |
+      <!DOCTYPE html>
+      <html>
+      <head>
+      </head>
+      <body>
+          <div class="content">
+              Tracker: Monitioring-tracker<br>
+              Status: {{ range .Alerts }}{{ .Annotations.status }}{{ end }}<br>
+              Priority: {{ range .Alerts }}{{ .Labels.priority }}{{ end }}<br>
+              Assignee: {{ range .Alerts }}{{ .Annotations.assignee }}{{ end }}<br>
+              Start date: {{ range .Alerts }}{{ .Annotations.start_date }}{{ end }}<br>
+              Due date: {{ range .Alerts }}{{ .Annotations.due_date }}{{ end }}<br>
+              Done ratio: {{ range .Alerts }}{{ .Annotations.done_ratio }}{{ end }}<br>
+              Description: {{ range .Alerts }}{{ .Annotations.description }}{{ end }}<br>
+          </div>
+      </body>
+      </html>
 
+- name: 'webhook-receiver'
+  webhook_configs:
+  - url: 'http://192.168.0.107:5100/api/v1/alerts'
+    send_resolved: true
+```
 
 
 
