@@ -384,6 +384,38 @@ production:
 ```
 podman exec -it redmine-postgres bash
 ```
+## Allow Email Notification in Redmine
+## Configure Email Notifications:
+- login redmine
+- Go to 'Administration' >'setting'>'email notification'
+- Check "Send email notifications".
+- Check "Issue added", "Issue updated", and "Issue assigned"
+## Set Up Mail Server Settings:
+- GO inside container
+```
+podman exec -it redmine-app /bin/bash
+cp configuration.example.yml configuration.yml
+cd /usr/src/redmine/config
+nano configuration.yml
+```
+- Add following content in Producation block
+```
+production:
+  email_delivery:
+    delivery_method: :smtp
+    smtp_settings:
+      address: "smtp.gmail.com"
+      port: 587
+      domain: "example.com"
+      authentication: :login
+      user_name: "your_email@example.com"
+      password: "your_email_password"
+      enable_starttls_auto: true
+```
+- restart redmine application.
+```
+podman restart redmine-app
+```
 ## Integrating node exporter and alertmanager with prometheus
 - Follow this steps for integrating prometheus node exporter and alertmanager
 - Go to
