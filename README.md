@@ -359,6 +359,31 @@ CONTAINER ID  IMAGE                              COMMAND               CREATED  
 55b159943b4f  docker.io/library/postgres:latest  postgres              5 days ago  Up 58 minutes ago  0.0.0.0:3100->3000/tcp, 0.0.0.0:5433->5432/tcp  redmine-postgres
 ddf1f6011867  docker.io/library/redmine:latest   rails server -b 0...  5 days ago  Up 58 minutes ago  0.0.0.0:3100->3000/tcp, 0.0.0.0:5433->5432/tcp  redmine-app
 ```
+## To Cheack database in redmine
+```
+podman exec -it redmine-app bash
+```
+```
+cd /usr/src/redmine/config
+```
+## To see database info use
+```
+cat database.yml
+```
+## Output
+```
+production:
+  adapter: "postgresql"
+  host: "127.0.0.1"
+  port: "5432"
+  username: "postgres"
+  password: "password"
+  database: "keen"
+  encoding: "utf8"
+```
+```
+podman exec -it redmine-postgres bash
+```
 ## Integrating node exporter and alertmanager with prometheus
 - Follow this steps for integrating prometheus node exporter and alertmanager
 - Go to
