@@ -318,7 +318,7 @@ podman run -dt \
     -e POSTGRES_PASSWORD=password \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
     -e PGDATA=/var/lib/postgresql/data/pgdata \
-    -v /home/nidhi/data/redmine/postgres:/var/lib/postgresql/data \
+    -v /home/pallavee/data/redmine/postgres:/var/lib/postgresql/data \
   docker.io/postgres:latest
 ```
 # Run the Redmine application container
