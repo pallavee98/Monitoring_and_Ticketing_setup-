@@ -598,9 +598,9 @@ receivers:
 ```
 ## Set up for webhook
 
-## Install python and Flask
+## Install python and Quart
 ```
-pip install Flask requests
+pip install Quart requests
 ```
 ## Check python Installed sucessfull
 ```
