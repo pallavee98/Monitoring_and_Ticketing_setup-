@@ -932,6 +932,21 @@ if __name__ == '__main__':
 uvicorn updated_alert_webhook:app --host 0.0.0.0 --port 5100 --reload
 ```
 
+## redmine configuration file
+```
+roduction:
+  email_delivery:
+    delivery_method: :smtp
+    smtp_settings:
+      address: "smtp.gmail.com"              # Gmail SMTP server address
+      port: 587                              # Gmail SMTP port (TLS)
+      domain: "gmail.com"                    # Your domain
+      authentication: :login                 # Authentication method
+      user_name: "pallaveechaubey831@gmail.com"       # Your Gmail address
+      password: "buhqfvumzpjimldm"               # Your Gmail password or app-specific passwo>
+      enable_starttls_auto: true              # Use TLS
+
+```
 
 
 
