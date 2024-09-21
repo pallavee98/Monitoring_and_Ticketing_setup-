@@ -486,8 +486,9 @@ Nano rules.yml
 ```
 ## Add follow content 
 ```
+
 groups:
-  - name: node_exporter_alerts
+  - name: alerts
     rules:
       # Alert for when Node Exporter is down
       - alert: NodeExporterDown
@@ -497,45 +498,79 @@ groups:
           severity: critical
           priority: priority1
         annotations:
-          summary: "Node Exporter Down (instance {{ $labels.instance }})"
+          summary: "NodeExporterDown"
           description: "Node Exporter has been down for more than 1 minute."
-          status: "In progress"
-          assignee: "pallavee"
+          status: "In Progress"
+          assignee: "test test"
           start_date: "2024-07-22"
           due_date: "2024-07-30"
           done_ratio: "50"
 
-      # Alert for when CPU usage exceeds 80%
-      - alert: HighCPUUsage
-        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+      - alert: HighCPUUsageInfo
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 50
+        for: 1m
+        labels:
+          severity: info
+          priority: priority8
+        annotations:
+          summary: "HighCPUUsageInfo"
+          description: "CPU usage has been above 50% for more than 1 minute."
+          status: "In Progress"
+          assignee: "test test"
+          start_date: "2024-07-22"
+          due_date: "2024-07-30"
+          done_ratio: "50"
+
+      # Alert for when CPU usage exceeds 70% (Warning)
+      - alert: HighCPUUsageWarning
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 70
         for: 1m
         labels:
           severity: warning
           priority: priority2
         annotations:
-          summary: "High CPU Usage (instance {{ $labels.instance }})"
-          description: "CPU usage has been above 80% for more than 1 minute."
-          status: "In progress"
-          assignee: "pallavee"
+          summary: "HighCPUUsageWarning"
+          description: "CPU usage has been above 70% for more than 1 minute."
+          status: "In Progress"
+          assignee: "test test"
           start_date: "2024-07-22"
           due_date: "2024-07-30"
           done_ratio: "50"
 
-      # Alert for when disk space consumption exceeds 80%
-      - alert: HighDiskUsage
-        expr: (node_filesystem_size_bytes{fstype!~"tmpfs|aufs|overlay"} - node_filesystem_free_bytes{fstype!~"tmpfs|aufs|overlay"}) / node_filesystem_size_bytes{fstype!~"tmpfs|aufs|overlay"} > 0.8
+      # Alert for when CPU usage exceeds 90% (Critical)
+      - alert: HighCPUUsageCritical
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
         for: 1m
         labels:
-          severity: warning
-          priority: priority3
+          severity: critical
+          priority: priority1
         annotations:
-          summary: "High Disk Usage (instance {{ $labels.instance }})"
-          description: "Disk usage has been above 80% for more than 1 minute."
-          status: "In progress"
-          assignee: "pallavee"
+          summary: "HighCPUUsageCritical"
+          description: "CPU usage has been above 90% for more than 1 minute."
+          status: "In Progress"
+          assignee: "test test"
           start_date: "2024-07-22"
           due_date: "2024-07-30"
           done_ratio: "50"
+
+      # Alert for when the Apache service is down
+      - alert: apacheDown
+        expr: up{job="apache_exporter"} == 0
+        for: 1m
+        labels:
+          severity: warning
+          priority: priority14
+        annotations:
+          summary: "apacheDown"
+          description: "Apache service is down."
+          status: "In Progress"
+          assignee: "test test"
+          start_date: "2024-07-22"
+          due_date: "2024-07-30"
+          done_ratio: "50"
+
+
+       
 ```
 ## Integrating webhook in alertmanager
 ```
