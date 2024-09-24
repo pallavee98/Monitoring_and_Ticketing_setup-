@@ -645,235 +645,218 @@ python --version
 ```
 nano alert_webhook.py
 ```
-## Add following content in file
+## Add following content in file to create ticket in redmine
 ```
-import asyncio
-import itertools  # Make sure to import itertools for cycling members
 from quart import Quart, request, jsonify
 import httpx
-from datetime import datetime
-import asyncpg
+from datetime import datetime, timedelta
+import itertools
+import asyncio
+import aiofiles
 
 app = Quart(__name__)
 
-# Database configuration
-DATABASE_URL = "postgresql://alert_user:password@localhost/alertmanager_db"
-
 # Redmine API Configuration
 REDMINE_API_URL = 'http://localhost:3100/issues.json'
-REDMINE_ISSUES_URL = 'http://localhost:3100/issues'
-REDMINE_API_KEY = 'cf7d0dd4fc772f5be0a06a02deafebb5fd53d83b'
+REDMINE_API_KEY = '2e38203bd529ca0fd3cbfdd970ae70835182c538'
+
+# File to store mapping of alert names to Redmine issue IDs
+ISSUE_MAP_FILE = 'issues_map.txt'
 
 # List of members' IDs (Redmine User IDs) in the project
-members = itertools.cycle([6, 7, 8])  # Replace with actual Redmine User IDs
+members = itertools.cycle([9, 10, 11])  # Replace with actual Redmine User IDs
 
-async def init_db():
-    """Initialize database connection."""
-    print("Initializing database connection...")
-    conn = await asyncpg.connect(DATABASE_URL)
-    print("Database connection established.")
-    return conn
+# Priority mapping based on severity
+PRIORITY_MAPPING = {
+    'critical': 1,  # Priority 1 in Redmine
+    'warning': 2,   # Priority 2 in Redmine
+    'info': 3       # Priority 3 in Redmine
+}
+
+# Estimated time mapping based on severity (in hours)
+ESTIMATE_TIME_MAPPING = {
+    'critical': 1,  # Estimate 1 hour
+    'warning': 2,   # Estimate 2 hours
+    'info': 3       # Estimate 3 hours
+}
 
 async def save_issue_id(alertname, issue_id):
-    """Save the issue ID associated with an alert name in the database."""
-    print(f"Saving issue ID {issue_id} for alert {alertname}")
-    conn = await init_db()
-    await conn.execute(
-        'INSERT INTO alert_issue_mapping (alertname, issue_id) VALUES ($1, $2)',
-        alertname, issue_id
-    )
-    await conn.close()
-    print(f"Saved issue ID {issue_id} for alert {alertname}")
-
-async def find_latest_issue_id(alertname):
-    """Find the most recent issue ID associated with an alert name from the database."""
-    print(f"Finding latest issue ID for alert {alertname}")
-    conn = await init_db()
-    row = await conn.fetchrow(
-        'SELECT issue_id FROM alert_issue_mapping WHERE alertname = $1 ORDER BY created_at DESC LIMIT 1',
-        alertname
-    )
-    await conn.close()
-    if row:
-        print(f"Found issue ID {row['issue_id']} for alert {alertname}")
-        return row['issue_id']
-    else:
-        print(f"No issue found for alert {alertname}")
-        return None
+    """Save the issue ID associated with an alert name."""
+    print(f"[INFO] Starting to save issue ID {issue_id} for alert {alertname}")
+    async with aiofiles.open(ISSUE_MAP_FILE, 'a') as f:
+        await f.write(f"{alertname}:{issue_id}\n")
+    print(f"[INFO] Finished saving issue ID {issue_id} for alert {alertname}")
 
 def get_next_assignee():
     """Get the next member in the cycle to assign the issue."""
-    assignee = next(members)
-    print(f"Assigning issue to member ID {assignee}")
-    return assignee
+    assignee_id = next(members)
+    print(f"[INFO] Next assignee ID is {assignee_id}")
+    return assignee_id
 
-async def create_redmine_issue(alert):
-    print(f"Creating Redmine issue for alert {alert['labels'].get('alertname')}")
+async def create_redmine_issue(alert, retry_attempts=3):
+    """Creates a Redmine issue and retries in case of failure."""
+    print(f"[INFO] Starting to create a Redmine issue for alert {alert['labels'].get('alertname')}")
+    
     headers = {
         'X-Redmine-API-Key': REDMINE_API_KEY,
         'Content-Type': 'application/json'
     }
     
-    start_date = datetime.now().date().isoformat()
+    # Calculate start date and due date
+    start_date = datetime.now().date().isoformat()  # Current date in YYYY-MM-DD format
+    due_date = (datetime.now().date() + timedelta(days=1)).isoformat()  # Due date is start date + 1 day
+    print(f"[INFO] Start date is {start_date} and due date is {due_date}")
+    
+    assignee_id = get_next_assignee()  # Get the next member to assign the issue
+    
+    # Determine priority and estimate time based on severity
     severity = alert['labels'].get('severity', 'info').lower()
-    
-    severity_to_estimated_time = {
-        'critical': 1,
-        'warning': 2,
-        'info': 3
-    }
-    estimated_time = severity_to_estimated_time.get(severity, 3)
-    assignee_id = get_next_assignee()
-    
-    severity_to_priority = {
-        'critical': 10,
-        'warning': 11,
-        'info': 12
-    }
-    priority_id = severity_to_priority.get(severity, 12)
+    priority_id = PRIORITY_MAPPING.get(severity, 3)  # Default to Priority 3 if severity not found
+    estimated_hours = ESTIMATE_TIME_MAPPING.get(severity, 3)  # Default to 3 hours if severity not found
+    print(f"[INFO] Severity is {severity}, setting priority to {priority_id} and estimate time to {estimated_hours} hours")
     
     issue_data = {
         "issue": {
-            "project_id": 2,
+            "project_id": 2,  # Project ID for 'monitoring'
             "subject": alert.get('annotations', {}).get('summary', 'No summary provided'),
             "description": alert.get('annotations', {}).get('description', 'No description provided'),
-            "priority_id": priority_id,
-            "status_id": 1,
-            "assigned_to_id": assignee_id,
-            "start_date": start_date,
-            "estimated_hours": estimated_time
+            "priority_id": priority_id,  # Priority based on severity
+            "status_id": 1,  # Set the issue status to "New" when created
+            "assigned_to_id": assignee_id,  # Assign the issue to the next member
+            "start_date": start_date,  # Start date
+            "due_date": due_date,  # Due date
+            "estimated_hours": estimated_hours  # Estimate time based on severity
         }
     }
     
-    async with httpx.AsyncClient() as client:
-        response = await client.post(REDMINE_API_URL, json=issue_data, headers=headers)
-    
-    if response.status_code == 201:
-        issue_id = response.json().get('issue', {}).get('id')
-        print(f"Redmine issue created with ID {issue_id}")
-        return issue_id
-    else:
-        print(f"Failed to create Redmine issue for alert {alert['labels'].get('alertname')}")
-        return None
-
-async def close_redmine_issue(issue_id):
-    print(f"Closing Redmine issue with ID {issue_id}")
-    url = f'{REDMINE_ISSUES_URL}/{issue_id}.json'
-    headers = {
-        'X-Redmine-API-Key': REDMINE_API_KEY,
-        'Content-Type': 'application/json'
-    }
-    issue_data = {
-        "issue": {
-            "status_id": 5  # Close status
-        }
-    }
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.put(url, json=issue_data, headers=headers)
-    
-    if response.status_code in [200, 204]:
-        print(f"Successfully closed Redmine issue with ID {issue_id}")
-        return True
-    else:
-        print(f"Failed to close Redmine issue with ID {issue_id}")
-        return False
-
-async def reopen_redmine_issue(issue_id, alertname):
-    print(f"Reopening Redmine issue with ID {issue_id} for unresolved alert {alertname}")
-    url = f'{REDMINE_ISSUES_URL}/{issue_id}.json'
-    headers = {
-        'X-Redmine-API-Key': REDMINE_API_KEY,
-        'Content-Type': 'application/json'
-    }
-    issue_data = {
-        "issue": {
-            "status_id": 7,
-            "notes": "Issue not resolved yet, please fix it."
-        }
-    }
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.put(url, json=issue_data, headers=headers)
-    
-    if response.status_code in [200, 204]:
-        print(f"Successfully reopened Redmine issue with ID {issue_id}")
-        return True
-    else:
-        print(f"Failed to reopen Redmine issue with ID {issue_id}")
-        return False
-
-async def get_active_alerts(retry_attempts=3):
-    print("Fetching active alerts from Alertmanager...")
-    attempt = 0
-    while attempt < retry_attempts:
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get('http://localhost:9093/api/v2/alerts')
-            
-            if response.status_code == 200:
-                alerts = response.json()
-                active_alerts = {alert['labels']['alertname'].strip() for alert in alerts}
-                print(f"Active alerts: {active_alerts}")
-                return active_alerts
-        except Exception as e:
-            print(f"Error fetching alerts: {e}")
+    for attempt in range(retry_attempts):
+        print(f"[INFO] Attempt {attempt + 1} to create Redmine issue for alert {alert['labels'].get('alertname')}")
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(REDMINE_API_URL, json=issue_data, headers=headers)
+                print(f"[INFO] Redmine response status: {response.status_code}")
+                print(f"[INFO] Redmine response content: {response.text}")
+                
+                if response.status_code == 201:
+                    issue_id = response.json().get('issue', {}).get('id')
+                    print(f"[INFO] Successfully created Redmine issue with ID {issue_id} for alert {alert['labels'].get('alertname')}")
+                    await save_issue_id(alert['labels'].get('alertname'), issue_id)
+                    return issue_id
+                else:
+                    print(f"[WARNING] Failed to create Redmine issue for alert {alert['labels'].get('alertname')} (attempt {attempt + 1})")
+            except Exception as e:
+                print(f"[ERROR] Error creating Redmine issue (attempt {attempt + 1}): {e}")
         
-        attempt += 1
-        await asyncio.sleep(1)
-    
-    print("Failed to fetch active alerts after retrying.")
-    return set()
+        print(f"[INFO] Waiting 2 seconds before retrying...")
+        await asyncio.sleep(2)  # Delay between retry attempts
+    print(f"[ERROR] All attempts to create Redmine issue for alert {alert['labels'].get('alertname')} failed")
+    return None
+
+async def handle_alert(alert):
+    """Process individual alerts asynchronously."""
+    alertname = alert['labels'].get('alertname')
+    print(f"[INFO] Processing alert: {alertname}")
+    if alert['status'] == 'firing':
+        print(f"[INFO] Alert {alertname} is firing, creating a Redmine issue")
+        issue_id = await create_redmine_issue(alert)
+        if issue_id:
+            print(f"[INFO] Created Redmine issue with ID {issue_id}")
+        else:
+            print(f"[ERROR] Failed to create Redmine issue for alert {alertname}")
+
+@app.route('/api/v1/alerts', methods=['GET', 'POST'])
+async def receive_alert():
+    if request.method == 'POST':
+        print("[INFO] Starting to process received alert")
+        alert_data = await request.get_json()
+        print(f"[INFO] Received alert data: {alert_data}")
+
+        tasks = []
+        for alert in alert_data.get('alerts', []):
+            print(f"[INFO] Queuing task for alert {alert['labels'].get('alertname')}")
+            tasks.append(handle_alert(alert))
+        
+        print("[INFO] Processing all queued alerts concurrently")
+        await asyncio.gather(*tasks)  # Process all alerts concurrently
+
+        print("[INFO] Finished processing received alert")
+        return jsonify({'status': 'received'}), 200
+    else:
+        print("[INFO] Webhook endpoint is running.")
+        return "Webhook endpoint is running.", 200
+
+if __name__ == '__main__':
+    print("[INFO] Starting webhook server")
+    uvicorn.run(app, host='0.0.0.0', port=5100, debug=True)
+    print("[INFO] Webhook server is running")
+
+
+
+```
+
+```
+check for closing ticket
+
+import httpx
+import asyncio
+
+# Redmine API Configuration
+REDMINE_ISSUES_URL = 'http://localhost:3100/issues'
+REDMINE_API_KEY = '2e38203bd529ca0fd3cbfdd970ae70835182c538'
+
+async def get_active_alerts():
+    """Fetch active alerts from Alertmanager."""
+    print("Fetching active alerts from Alertmanager...")
+    async with httpx.AsyncClient() as client:
+        response = await client.get('http://localhost:9093/api/v2/alerts')
+        print(f"Alertmanager response status: {response.status_code}")
+        if response.status_code == 200:
+            alerts = response.json()
+            active_alerts = {alert['labels']['alertname'].strip() for alert in alerts}
+            print(f"Active alerts: {active_alerts}")
+            return active_alerts
+        print("Failed to fetch active alerts from Alertmanager.")
+        return set()
 
 async def get_resolved_issues():
+    """Fetch resolved issues from Redmine."""
     print("Fetching resolved issues from Redmine...")
     headers = {
         'X-Redmine-API-Key': REDMINE_API_KEY,
         'Content-Type': 'application/json'
     }
     params = {
-        'status_id': 3  # Resolved status
+        'status_id': 3  # Status ID for 'Resolved'
     }
     async with httpx.AsyncClient() as client:
         response = await client.get(f'{REDMINE_ISSUES_URL}.json', headers=headers, params=params)
-    
-    if response.status_code == 200:
-        issues = response.json().get('issues', [])
-        resolved_issues = {issue['id']: issue['subject'].split()[0].strip() for issue in issues}
-        print(f"Resolved issues: {resolved_issues}")
-        return resolved_issues
-    else:
-        print(f"Failed to fetch resolved issues. Status code: {response.status_code}")
+        print(f"Redmine response status: {response.status_code}")
+        if response.status_code == 200:
+            issues = response.json().get('issues', [])
+            resolved_issues = {issue['id']: issue['subject'].split()[0].strip() for issue in issues}
+            print(f"Resolved issues: {resolved_issues}")
+            return resolved_issues
+        print("Failed to fetch resolved issues from Redmine.")
         return {}
 
-async def resolve_new_issues_without_alerts():
-    print("Resolving 'New' issues without active alerts...")
+async def close_or_reassign_tickets():
+    """Check if resolved issues in Redmine should be reassigned or closed."""
+    print("Checking if resolved issues in Redmine should be reassigned or closed...")
     active_alerts = await get_active_alerts()
-    headers = {
-        'X-Redmine-API-Key': REDMINE_API_KEY,
-        'Content-Type': 'application/json'
-    }
-    params = {
-        'status_id': 1  # New status
-    }
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f'{REDMINE_ISSUES_URL}.json', headers=headers, params=params)
+    resolved_issues = await get_resolved_issues()
     
-    if response.status_code == 200:
-        new_issues = response.json().get('issues', [])
-        tasks = []
-        for issue in new_issues:
-            alertname = issue['subject'].split()[0].strip()
-            issue_id = issue['id']
-            
-            if alertname not in active_alerts:
-                print(f"Resolving issue ID {issue_id} to 'Resolved-Automatic'")
-                tasks.append(close_redmine_issue_as_resolved_automatic(issue_id))
-        
-        await asyncio.gather(*tasks)
+    for issue_id, alertname in resolved_issues.items():
+        if alertname in active_alerts:
+            # Reassign issue if it's still in Alertmanager
+            print(f"Alert {alertname} is still active, reassigning Redmine issue {issue_id}.")
+            await reopen_redmine_issue(issue_id, alertname)
+        else:
+            # Close issue if it's not in Alertmanager anymore
+            print(f"Alert {alertname} is no longer active, closing Redmine issue {issue_id}.")
+            await close_redmine_issue(issue_id)
 
-async def close_redmine_issue_as_resolved_automatic(issue_id):
-    print(f"Setting issue ID {issue_id} to 'Resolved-Automatic'")
+async def reopen_redmine_issue(issue_id, alertname):
+    print(f"Reassigning Redmine issue {issue_id} due to unresolved alert {alertname}.")
     url = f'{REDMINE_ISSUES_URL}/{issue_id}.json'
     headers = {
         'X-Redmine-API-Key': REDMINE_API_KEY,
@@ -881,87 +864,97 @@ async def close_redmine_issue_as_resolved_automatic(issue_id):
     }
     issue_data = {
         "issue": {
-            "status_id": 8  # Resolved-Automatic status
+            "status_id": 6,  # Set to 'Reassigned'
+            "notes": "Issue not resolved yet, please fix it."
         }
     }
-    
     async with httpx.AsyncClient() as client:
         response = await client.put(url, json=issue_data, headers=headers)
-    
-    if response.status_code in [200, 204]:
-        print(f"Successfully set issue ID {issue_id} to 'Resolved-Automatic'")
-        return True
-    else:
-        print(f"Failed to set issue ID {issue_id} to 'Resolved-Automatic'")
-        return False
+        print(f"Redmine response for reassigning issue {issue_id}: {response.status_code}")
 
-async def close_resolved_issues_without_alerts():
-    print("Closing resolved issues without active alerts...")
-    active_alerts = await get_active_alerts()
-    resolved_issues = await get_resolved_issues()
-    tasks = []
-    
-    for issue_id, alertname in resolved_issues.items():
-        if alertname in active_alerts:
-            print(f"Reopening issue ID {issue_id} because alert {alertname} is still active.")
-            tasks.append(reopen_redmine_issue(issue_id, alertname))
-        else:
-            print(f"Closing issue ID {issue_id} because alert {alertname} is resolved.")
-            tasks.append(close_redmine_issue(issue_id))
-    
-    await resolve_new_issues_without_alerts()
-    await asyncio.gather(*tasks)
+async def close_redmine_issue(issue_id):
+    print(f"Closing Redmine issue {issue_id}.")
+    url = f'{REDMINE_ISSUES_URL}/{issue_id}.json'
+    headers = {
+        'X-Redmine-API-Key': REDMINE_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    issue_data = {
+        "issue": {
+            "status_id": 4  # Set to 'Closed'
+        }
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.put(url, json=issue_data, headers=headers)
+        print(f"Redmine response for closing issue {issue_id}: {response.status_code}")
 
-# Periodic task to check and close issues every 2 minutes
-async def periodic_ticket_closure_task():
-    print("Starting periodic task to check and close tickets...")
-    while True:
-        await close_resolved_issues_without_alerts()
-        await asyncio.sleep(120)  # Check every 2 minutes
+async def resolve_new_issues():
+    """Automatically resolve 'New' Redmine issues that have no active alerts."""
+    print("Resolving 'New' Redmine issues that have no active alerts...")
+    headers = {
+        'X-Redmine-API-Key': REDMINE_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    params = {
+        'status_id': 1  # Status ID for 'New'
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f'{REDMINE_ISSUES_URL}.json', headers=headers, params=params)
+        print(f"Redmine response for 'New' issues: {response.status_code}")
+        if response.status_code == 200:
+            issues = response.json().get('issues', [])
+            active_alerts = await get_active_alerts()
+            for issue in issues:
+                alertname = issue['subject'].split()[0].strip()
+                if alertname not in active_alerts:
+                    issue_id = issue['id']
+                    print(f"Alert {alertname} is no longer active, resolving Redmine issue {issue_id} automatically.")
+                    await close_redmine_issue_as_resolved_automatic(issue_id)
 
-# Register the background task before the app starts
-@app.before_serving
-async def start_background_tasks():
-    print("Starting background task...")
-    asyncio.create_task(periodic_ticket_closure_task())
+async def close_redmine_issue_as_resolved_automatic(issue_id):
+    print(f"Automatically resolving Redmine issue {issue_id}.")
+    url = f'{REDMINE_ISSUES_URL}/{issue_id}.json'
+    headers = {
+        'X-Redmine-API-Key': REDMINE_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    issue_data = {
+        "issue": {
+            "status_id": 5  # Set to 'Resolved-Automatic'
+        }
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.put(url, json=issue_data, headers=headers)
+        print(f"Redmine response for automatically resolving issue {issue_id}: {response.status_code}")
 
-@app.route('/api/v1/alerts', methods=['POST'])
-async def receive_alert():
-    alert_data = await request.get_json()
-    print(f"Received alert: {alert_data}")
-    
-    for alert in alert_data.get('alerts', []):
-        alertname = alert['labels'].get('alertname').strip()
-        if alert['status'] == 'firing':
-            print(f"Creating issue for alert {alertname}")
-            issue_id = await create_redmine_issue(alert)
-            if issue_id:
-                await save_issue_id(alertname, issue_id)
-        elif alert['status'] == 'resolved':
-            print(f"Resolving issue for alert {alertname}")
-            issue_id = await find_latest_issue_id(alertname)
-            if issue_id:
-                await close_redmine_issue(issue_id)
-    
-    await close_resolved_issues_without_alerts()
-    return jsonify({'status': 'received'}), 200
-
-@app.route('/test-db', methods=['GET'])
-async def test_db():
-    print("Testing database connection...")
-    conn = await init_db()
-    rows = await conn.fetch('SELECT * FROM alert_issue_mapping')
-    await conn.close()
-    print(f"Fetched rows from DB: {rows}")
-    return jsonify([dict(row) for row in rows])
+async def main():
+    """Main function to handle ticket updates."""
+    print("Starting ticket management loop...")
+    try:
+        while True:
+            print("Checking tickets for reassignment or closure...")
+            await close_or_reassign_tickets()
+            print("Checking for new issues to resolve automatically...")
+            await resolve_new_issues()
+            print("Sleeping for 60 seconds...")
+            await asyncio.sleep(60)  # Run every 60 seconds
+    except KeyboardInterrupt:
+        print("Script interrupted, shutting down gracefully.")
 
 if __name__ == '__main__':
-    print("Starting webhook server...")
-    asyncio.run(app.run_task(host='0.0.0.0', port=5100))
-
+    print("Starting ticket management script.")
+    
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Main script interrupted by user (Ctrl + C), exiting.")
 
 
 ```
+```
+ ## to close ticket use python3 manage_ticket.py 
+```
+
 ## Command to run webhook
 ```
 uvicorn updated_alert_webhook:app --host 0.0.0.0 --port 5100 --reload
